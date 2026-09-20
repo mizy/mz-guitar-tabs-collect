@@ -7,11 +7,11 @@
  *   其他外壳文件  cache-first
  * 预缓存一律用 { cache: "reload" } 抓，避免把浏览器 HTTP 缓存里的旧副本（最多 10 分钟）固化进来。
  */
-const CACHE_VERSION = "6f66f2a7";
+const CACHE_VERSION = "b3d484cb";
 const SHELL_CACHE = "guitar-shell-" + CACHE_VERSION;
 const DATA_CACHE = "guitar-data-" + CACHE_VERSION;
 const IMAGE_CACHE = "guitar-image-" + CACHE_VERSION;
-const SHELL_ASSETS = ["./", "./index.html", "./prelude.6f66f2a7.js", "./app.6f66f2a7.js", "./manifest.webmanifest",
+const SHELL_ASSETS = ["./", "./index.html", "./prelude.b3d484cb.js", "./app.b3d484cb.js", "./manifest.webmanifest",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
 
 function precache(cache, urls) {
