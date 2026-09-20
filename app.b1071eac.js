@@ -731,20 +731,47 @@ function applyPageZoom() {
    - 整页模式未放大时，滚动即翻页（带节流，避免一下翻好几页） */
 let wheelPageCooldown = 0;
 let toolbarIdleTimer = 0;
+let toolbarHiddenAt = 0;
+let lastPointerX = null;
+let lastPointerY = null;
+const TOOLBAR_IDLE_MS = 2800;
+/* 浏览器在样式/布局变化后会补发 pointermove（坐标不变），触控板也会飘；
+   所以只有指针真的移动超过这个距离才算「人在操作」，否则一隐藏就被唤醒。 */
+const TOOLBAR_MIN_POINTER_MOVE = 8;
 
-/* 工具条浮在画面上、不占高度：闲置一会儿自动收起，鼠标/手指一动就回来 */
+/* 工具条浮在画面上、不占高度：闲置一会儿自动收起，指针真的动了就回来 */
 function showViewerToolbar() {
   if (!state.viewerOpen) return;
   DOM.viewerToolbar.classList.remove("idle");
   window.clearTimeout(toolbarIdleTimer);
   toolbarIdleTimer = window.setTimeout(function() {
-    if (state.viewerOpen) DOM.viewerToolbar.classList.add("idle");
-  }, 2800);
+    if (state.viewerOpen) hideViewerToolbar();
+  }, TOOLBAR_IDLE_MS);
 }
 
 function hideViewerToolbar() {
   window.clearTimeout(toolbarIdleTimer);
+  toolbarHiddenAt = Date.now();
   DOM.viewerToolbar.classList.add("idle");
+}
+
+/* 手动兜底：按 T 直接收起/唤出工具条（自动隐藏万一不合口味就用这个） */
+function toggleViewerToolbar() {
+  if (DOM.viewerToolbar.classList.contains("idle")) showViewerToolbar();
+  else hideViewerToolbar();
+}
+
+function handleViewerPointerMove(event) {
+  if (typeof event.clientX !== "number") return;
+  const previousX = lastPointerX;
+  const previousY = lastPointerY;
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  if (previousX === null) return;
+  if (Math.hypot(event.clientX - previousX, event.clientY - previousY) < TOOLBAR_MIN_POINTER_MOVE) return;
+  /* 刚隐藏完的一瞬间不复活，避免「隐藏→补发事件→又出现」的抖动 */
+  if (Date.now() - toolbarHiddenAt < 400) return;
+  showViewerToolbar();
 }
 
 function handleViewerWheel(event) {
@@ -980,11 +1007,20 @@ function bindEvents() {
   DOM.fitPageBtn.addEventListener("click", function() { setFitMode("page"); });
   DOM.fullscreenBtn.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", syncFullscreenButton);
-  DOM.viewer.addEventListener("pointermove", showViewerToolbar);
+  DOM.viewer.addEventListener("pointermove", handleViewerPointerMove);
   DOM.viewer.addEventListener("pointerdown", showViewerToolbar);
   DOM.viewer.addEventListener("wheel", showViewerToolbar, { passive: true });
   DOM.viewer.addEventListener("touchstart", showViewerToolbar, { passive: true });
-  document.addEventListener("keydown", showViewerToolbar);
+  /* 注意：T 是手动切换键，Esc 要留给「退全屏/关阅读器」，这两个键不能算「活动」，
+     否则按 T 时先被活跃监听唤出、再被切换逻辑收起，表现为怎么按都是隐藏 */
+  document.addEventListener("keydown", function(event) {
+    const pressed = event.key.toLowerCase();
+    if (pressed === "t" || pressed === "escape") return;
+    showViewerToolbar();
+  });
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden) hideViewerToolbar();
+  });
   DOM.zoomSlider.addEventListener("input", function(event) {
     setZoom(Number(event.target.value) / 100);
   });
@@ -1019,6 +1055,8 @@ function bindEvents() {
         setFitMode("horizontal");
       } else if (event.key.toLowerCase() === "v") {
         setFitMode("vertical");
+      } else if (event.key.toLowerCase() === "t") {
+        toggleViewerToolbar();
       }
       return;
     }

@@ -33,11 +33,23 @@ function setLazyImage(image, url) {
 
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
+
   function register() {
-    navigator.serviceWorker.register("sw.js").catch(function(error) {
+    navigator.serviceWorker.register("sw.js").then(function() {
+      /* 部署新版后，旧 Service Worker 仍会按旧缓存供外壳文件；新 SW 一旦接管就自动刷新一次，
+         否则用户看到的是「改了但没生效」。首次安装时 clients.claim() 也会触发 controllerchange，
+         所以只在本页加载时就已经有 controller 的情况下才刷新，并用 sessionStorage 保证一次会话只刷一次。 */
+      if (!navigator.serviceWorker.controller) return;
+      navigator.serviceWorker.addEventListener("controllerchange", function() {
+        if (sessionStorage.getItem("guitar-shell-refreshed")) return;
+        try { sessionStorage.setItem("guitar-shell-refreshed", "1"); } catch (error) { /* 隐私模式忽略 */ }
+        window.location.reload();
+      });
+    }).catch(function(error) {
       console.warn("[离线缓存注册失败，功能不受影响]", error);
     });
   }
+
   /* boot() 会先 await 元数据，等它跑完 load 可能已经触发过了，所以两种情形都要覆盖 */
   if (document.readyState === "complete") register();
   else window.addEventListener("load", register, { once: true });

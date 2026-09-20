@@ -626,6 +626,7 @@ button:focus-visible, input:focus-visible {
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="我的吉他谱库">
+<meta name="x-build" content="b1071eac">
 <style id="viewer-overrides">
 /* ==========================================================================
    暗色主题 + 阅读器工具栏重构（由 build-guitar-tabs-site.mjs 注入到 </head> 前）
@@ -772,6 +773,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
 }
 
 .viewer:fullscreen { background: #0b0d10; }
+
+/* 侧边栏底部的版本号：确认客户端跑的是哪一版（与构建哈希一致） */
+.build-stamp {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
 </style>
 </head>
 <body>
@@ -783,6 +794,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
     <div class="sidebar-header">
       <span class="library-name">🎸 <span id="libraryName">我的吉他谱库</span></span>
       <span class="library-stats" id="libraryStats"></span>
+      <span class="build-stamp" id="buildStamp">build b1071eac</span>
     </div>
     <div class="sidebar-nav" id="sidebarNav"></div>
   </nav>
@@ -853,8 +865,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   <nav class="viewer-footer" id="viewerFooter" aria-label="页码导航"></nav>
 </div>
 
-<script src="prelude.js" defer></script>
-<script src="app.js" defer></script>
+<script src="prelude.b1071eac.js" defer></script>
+<script src="app.b1071eac.js" defer></script>
 
 </body>
 </html><!-- compact build complete -->
