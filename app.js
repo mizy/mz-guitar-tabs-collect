@@ -46,6 +46,8 @@ const DOM = {
   viewerHint: document.getElementById("viewerHint"),
   viewerImg: document.getElementById("viewerImg"),
   viewerPages: document.getElementById("viewerPages"),
+  viewerPageStatus: document.getElementById("viewerPageStatus"),
+  fullscreenBtn: document.getElementById("fullscreenBtn"),
   viewerStage: document.getElementById("viewerStage"),
   viewerFooter: document.getElementById("viewerFooter"),
   navPrev: document.getElementById("navPrev"),
@@ -491,13 +493,13 @@ function renderContinuousPages(song) {
 }
 
 function updateViewerPageStatus(song) {
-  let modeHint = "拖动缩放滑块 · 左右箭头翻页";
-  if (state.fitMode === "width") modeHint = "上下滚动 · 左右箭头翻页";
-  if (state.fitMode === "horizontal") modeHint = "横向滚动 · 左右箭头跳页";
-  if (state.fitMode === "vertical") modeHint = "纵向滚动 · ↑↓逐行移动 · 可用缩放滑块";
+  let modeHint = "Ctrl/⌘+滚轮或双指捏合缩放 · 放大后滚轮平移 · ← → 翻页";
+  if (state.fitMode === "width") modeHint = "上下滚轮滚动 · ← → 翻页";
+  if (state.fitMode === "horizontal") modeHint = "横向滚动翻页（滚轮 / 触控板均可）· ← → 跳页";
+  if (state.fitMode === "vertical") modeHint = "上下滚动逐页 · 触控板横向手势平移 · ↑↓ 逐行";
 
-  DOM.viewerHint.textContent = "第 " + (state.pageIndex + 1) + " / " + song.pageImageIds.length
-    + " 页 · " + modeHint;
+  DOM.viewerHint.textContent = modeHint;
+  DOM.viewerPageStatus.textContent = (state.pageIndex + 1) + " / " + song.pageImageIds.length;
   DOM.navPrev.disabled = state.pageIndex === 0;
   DOM.navNext.disabled = state.pageIndex === song.pageImageIds.length - 1;
 
@@ -728,6 +730,75 @@ function applyVerticalZoom(previousScale) {
   DOM.viewerStage.scrollLeft = Math.max(0, (DOM.viewerStage.scrollWidth - DOM.viewerStage.clientWidth) / 2);
 }
 
+/* 滚轮 / 触控板：任何排布下都要能顺畅滚动或平移。
+   - 有可滚动空间就滚那条轴（横排滚横向、纵滚两轴都行、宽度只滚竖向）
+   - 整页模式放大后按滚动方向平移画面；Ctrl/⌘+滚轮（触控板捏合）缩放
+   - 整页模式未放大时，滚动即翻页（带节流，避免一下翻好几页） */
+let wheelPageCooldown = 0;
+
+function handleViewerWheel(event) {
+  if (!state.viewerOpen) return;
+
+  const stage = DOM.viewerStage;
+  const shiftAsHorizontal = event.shiftKey && !event.deltaX;
+  const horizontalDelta = shiftAsHorizontal ? event.deltaY : event.deltaX;
+  const verticalDelta = shiftAsHorizontal ? 0 : event.deltaY;
+
+  if (state.fitMode === "page") {
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      setZoom(zoom.scale * (event.deltaY < 0 ? 1.12 : 0.89));
+      return;
+    }
+    if (zoom.scale > 1) {
+      event.preventDefault();
+      zoom.x -= horizontalDelta;
+      zoom.y -= verticalDelta;
+      applyPageZoom();
+      return;
+    }
+    const step = Math.abs(horizontalDelta) >= Math.abs(verticalDelta) ? horizontalDelta : verticalDelta;
+    if (Math.abs(step) < 8) return;
+    event.preventDefault();
+    if (wheelPageCooldown) return;
+    wheelPageCooldown = window.setTimeout(function() { wheelPageCooldown = 0; }, 280);
+    changePage(step > 0 ? 1 : -1);
+    return;
+  }
+
+  const canScrollX = stage.scrollWidth - stage.clientWidth > 1;
+  const canScrollY = stage.scrollHeight - stage.clientHeight > 1;
+  let handled = false;
+
+  if (canScrollX && Math.abs(horizontalDelta) > 0.5) { stage.scrollLeft += horizontalDelta; handled = true; }
+  if (canScrollY && Math.abs(verticalDelta) > 0.5) { stage.scrollTop += verticalDelta; handled = true; }
+  /* 横排模式没有纵向滚动空间，竖向滚轮也当作横向滚动 */
+  if (!handled && canScrollX && Math.abs(verticalDelta) > 0.5) { stage.scrollLeft += verticalDelta; handled = true; }
+
+  if (handled) event.preventDefault();
+}
+
+/* 全屏：只把阅读器元素放全屏（不动整页），退出时同步按钮状态 */
+function isViewerFullscreen() {
+  return document.fullscreenElement === DOM.viewer;
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  const request = DOM.viewer.requestFullscreen || DOM.viewer.webkitRequestFullscreen;
+  if (!request) return;
+  Promise.resolve(request.call(DOM.viewer)).catch(function(error) {
+    console.warn("[进入全屏失败]", error);
+  });
+}
+
+function syncFullscreenButton() {
+  const active = isViewerFullscreen();
+  DOM.fullscreenBtn.classList.toggle("active", active);
+  DOM.fullscreenBtn.setAttribute("aria-pressed", String(active));
+  DOM.fullscreenBtn.textContent = active ? "退出全屏" : "全屏";
+}
+
 function bindViewerGestures() {
   const touch = {
     startX: null,
@@ -814,13 +885,7 @@ function bindViewerGestures() {
     touch.pinching = false;
   });
 
-  DOM.viewerStage.addEventListener("wheel", function(event) {
-    if (!state.viewerOpen || state.fitMode !== "horizontal") return;
-    const distance = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
-    if (!distance) return;
-    event.preventDefault();
-    DOM.viewerStage.scrollLeft += distance;
-  }, { passive: false });
+  DOM.viewerStage.addEventListener("wheel", handleViewerWheel, { passive: false });
 
   DOM.viewerStage.addEventListener("mousedown", function(event) {
     if (!state.viewerOpen || zoom.scale <= 1 || state.fitMode !== "page") return;
@@ -862,6 +927,8 @@ function bindEvents() {
     if (nextSong) openSong(nextSong.id, { pageIndex: 0, openViewer: true });
   });
   DOM.fitPageBtn.addEventListener("click", function() { setFitMode("page"); });
+  DOM.fullscreenBtn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", syncFullscreenButton);
   DOM.zoomSlider.addEventListener("input", function(event) {
     setZoom(Number(event.target.value) / 100);
   });
@@ -873,6 +940,8 @@ function bindEvents() {
   document.addEventListener("keydown", function(event) {
     if (state.viewerOpen) {
       if (event.key === "Escape") {
+        /* 全屏时第一下 Esc 交给浏览器退全屏，第二下才关阅读器 */
+        if (document.fullscreenElement) return;
         event.preventDefault();
         closeViewer();
       } else if (state.fitMode === "vertical" && (event.key === "ArrowDown" || event.key === "ArrowUp")) {

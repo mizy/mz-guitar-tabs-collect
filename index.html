@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#c97945">
+<meta name="theme-color" content="#101216">
 <title>我的吉他谱库</title>
 <style>
 :root {
@@ -626,6 +626,128 @@ button:focus-visible, input:focus-visible {
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="我的吉他谱库">
+<style id="viewer-overrides">
+/* ==========================================================================
+   暗色主题 + 阅读器工具栏重构（由 build-guitar-tabs-site.mjs 注入到 </head> 前）
+   改这里，不要去改源单文件里的浅色样式：源文件是用户自己的生成流程产出的，
+   会被覆盖，所以暗色主题用「后置覆盖」的方式落地。
+   覆盖依据（源 styles.css 里写死的浅色，共 8 处）：
+     :root 变量 / .topbar / .search-box input / .sidebar-item:hover /
+     .song-card img / .page-card img / .sidebar-overlay / :focus-visible outline
+   ========================================================================== */
+
+:root {
+  color-scheme: dark;
+  --bg: #101216;
+  --surface: #191d23;
+  --surface-muted: #232830;
+  --text: #e8e6e2;
+  --muted: #98a0aa;
+  --accent: #d98a55;
+  --accent-dark: #b96f3d;
+  --accent-soft: #2f2419;
+  --border: #2a3038;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  --shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.6);
+}
+
+.topbar { background: rgba(16, 18, 22, 0.94); }
+.search-box input { background: #1d222a; }
+.sidebar-item:hover { background: #20252d; }
+.song-card img, .page-card img { background: #232830; }
+.sidebar-overlay { background: rgba(0, 0, 0, 0.55); }
+button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85, 0.55); }
+
+/* ---- 阅读器：所有操作按钮收进顶部一整条，退出按钮不再压在谱面上 ---- */
+
+.viewer { display: flex; flex-direction: column; background: #0b0d10; }
+
+.viewer-toolbar {
+  position: static;
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  background: rgba(16, 18, 22, 0.97);
+  border-bottom: 1px solid var(--border);
+  pointer-events: auto;
+}
+
+.viewer-close {
+  flex: 0 0 auto;
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.viewer-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.viewer-actions {
+  display: flex;
+  flex: 0 1 auto;
+  max-width: none;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.viewer-pager,
+.viewer-modes { display: flex; align-items: center; gap: 4px; }
+.viewer-actions .viewer-control,
+.viewer-actions .zoom-control { background: rgba(255, 255, 255, 0.09); }
+.viewer-actions .viewer-control.active { color: #1a1208; background: var(--accent); }
+
+.viewer-page-status {
+  min-width: 54px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.viewer-next-song {
+  position: static;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.viewer-stage {
+  position: relative;
+  inset: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 clamp(10px, 3vw, 44px);
+}
+.viewer-stage[data-fit="width"],
+.viewer-stage[data-fit="vertical"] { padding: 0 clamp(10px, 3vw, 44px); }
+.viewer-stage[data-fit="horizontal"] {
+  padding: 0 clamp(10px, 3vw, 44px);
+  scroll-padding-inline: clamp(10px, 3vw, 44px);
+}
+.viewer-stage[data-fit="width"],
+.viewer-stage[data-fit="horizontal"],
+.viewer-stage[data-fit="vertical"] { overscroll-behavior: contain; }
+
+.viewer:fullscreen { background: #0b0d10; }
+</style>
 </head>
 <body>
 <div class="loading" id="loading" role="status">正在加载谱库…</div>
@@ -676,28 +798,34 @@ button:focus-visible, input:focus-visible {
     <button class="viewer-control viewer-close" id="viewerClose" type="button" aria-label="关闭阅读器">×</button>
     <div class="viewer-heading">
       <span class="viewer-title" id="viewerTitle"></span>
-      <span class="viewer-hint" id="viewerHint">双击或滚轮缩放；两指缩放；左右箭头翻页</span>
+      <span class="viewer-hint" id="viewerHint"></span>
     </div>
-    <div class="viewer-actions">
-      <button class="viewer-control active" id="fitPageBtn" type="button" aria-pressed="true">整页</button>
+    <div class="viewer-actions" role="group" aria-label="阅读器操作">
+      <div class="viewer-pager" role="group" aria-label="翻页">
+        <button class="viewer-control" id="navPrev" type="button" aria-label="上一页">‹</button>
+        <span class="viewer-page-status" id="viewerPageStatus">1 / 1</span>
+        <button class="viewer-control" id="navNext" type="button" aria-label="下一页">›</button>
+      </div>
+      <div class="viewer-modes" role="group" aria-label="排布方式">
+        <button class="viewer-control active" id="fitPageBtn" type="button" aria-pressed="true">整页</button>
+        <button class="viewer-control" id="fitWidthBtn" type="button" aria-pressed="false">宽度</button>
+        <button class="viewer-control" id="horizontalBtn" type="button" aria-label="横向并排阅读" aria-pressed="false">横排</button>
+        <button class="viewer-control" id="verticalBtn" type="button" aria-label="竖直滚动阅读" aria-pressed="false">纵滚</button>
+      </div>
       <label class="zoom-control" id="zoomControl" for="zoomSlider">
         <span>缩放</span>
         <input id="zoomSlider" type="range" min="100" max="500" step="10" value="100" aria-label="谱面缩放比例">
         <output class="zoom-value" id="zoomValue" for="zoomSlider">100%</output>
       </label>
-      <button class="viewer-control" id="fitWidthBtn" type="button" aria-pressed="false">宽度</button>
-      <button class="viewer-control" id="horizontalBtn" type="button" aria-label="横向并排阅读" aria-pressed="false">横排</button>
-      <button class="viewer-control" id="verticalBtn" type="button" aria-label="竖直滚动阅读" aria-pressed="false">纵滚</button>
+      <button class="viewer-control" id="fullscreenBtn" type="button" aria-pressed="false" aria-label="全屏阅读">全屏</button>
+      <button class="viewer-control viewer-next-song" id="nextSongBtn" type="button">下一首 →</button>
     </div>
   </div>
-  <button class="viewer-nav prev" id="navPrev" type="button" aria-label="上一页">‹</button>
   <div class="viewer-stage" id="viewerStage" data-fit="page">
     <img id="viewerImg" src="" alt="" draggable="false">
     <div class="viewer-pages" id="viewerPages" hidden></div>
   </div>
-  <button class="viewer-nav next" id="navNext" type="button" aria-label="下一页">›</button>
   <nav class="viewer-footer" id="viewerFooter" aria-label="页码导航"></nav>
-  <button class="viewer-next-song" id="nextSongBtn" type="button">下一首 →</button>
 </div>
 
 <script src="prelude.js" defer></script>
