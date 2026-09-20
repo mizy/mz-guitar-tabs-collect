@@ -48,6 +48,7 @@ const DOM = {
   viewerPages: document.getElementById("viewerPages"),
   viewerPageStatus: document.getElementById("viewerPageStatus"),
   fullscreenBtn: document.getElementById("fullscreenBtn"),
+  viewerToolbar: document.getElementById("viewerToolbar"),
   viewerStage: document.getElementById("viewerStage"),
   viewerFooter: document.getElementById("viewerFooter"),
   navPrev: document.getElementById("navPrev"),
@@ -407,6 +408,7 @@ function openViewer(pageIndex, options) {
   DOM.viewer.hidden = false;
   document.body.classList.add("viewer-open");
   updateViewer();
+  showViewerToolbar();
 
   if (settings.focus !== false) {
     window.requestAnimationFrame(function() { DOM.viewerClose.focus(); });
@@ -619,7 +621,8 @@ function setFitMode(fitMode) {
   DOM.fitWidthBtn.setAttribute("aria-pressed", String(fitMode === "width"));
   DOM.horizontalBtn.setAttribute("aria-pressed", String(fitMode === "horizontal"));
   DOM.verticalBtn.setAttribute("aria-pressed", String(fitMode === "vertical"));
-  const supportsZoom = fitMode === "page" || fitMode === "vertical";
+  /* 四种排布都支持缩放，默认 100% */
+  const supportsZoom = true;
   DOM.zoomControl.hidden = !supportsZoom;
   DOM.zoomSlider.disabled = !supportsZoom;
   saveReadingMode(fitMode);
@@ -680,7 +683,10 @@ function resetZoom() {
   zoom.x = 0;
   zoom.y = 0;
   DOM.viewerImg.style.transform = "translate(0px, 0px) scale(1)";
+  DOM.viewerImg.style.width = "";
   DOM.viewerPages.style.width = "";
+  DOM.viewerPages.style.height = "";
+  DOM.viewerStage.style.overflowY = "";
   DOM.zoomSlider.value = "100";
   DOM.zoomValue.value = "100%";
 }
@@ -694,10 +700,10 @@ function setZoom(nextScale) {
   }
   DOM.zoomSlider.value = String(Math.round(zoom.scale * 100));
   DOM.zoomValue.value = Math.round(zoom.scale * 100) + "%";
-  if (state.fitMode === "vertical") {
-    applyVerticalZoom(previousScale);
-  } else {
+  if (state.fitMode === "page") {
     applyPageZoom();
+  } else {
+    applyZoom(previousScale);
   }
 }
 
@@ -719,25 +725,37 @@ function applyPageZoom() {
   }
 }
 
-function applyVerticalZoom(previousScale) {
-  const stageStyle = getComputedStyle(DOM.viewerStage);
-  const horizontalPadding = parseFloat(stageStyle.paddingLeft) + parseFloat(stageStyle.paddingRight);
-  const baseWidth = Math.min(DOM.viewerStage.clientWidth - horizontalPadding, 1040);
-  const scrollRatio = zoom.scale / previousScale;
-
-  DOM.viewerPages.style.width = Math.round(baseWidth * zoom.scale) + "px";
-  DOM.viewerStage.scrollTop *= scrollRatio;
-  DOM.viewerStage.scrollLeft = Math.max(0, (DOM.viewerStage.scrollWidth - DOM.viewerStage.clientWidth) / 2);
-}
-
 /* 滚轮 / 触控板：任何排布下都要能顺畅滚动或平移。
    - 有可滚动空间就滚那条轴（横排滚横向、纵滚两轴都行、宽度只滚竖向）
    - 整页模式放大后按滚动方向平移画面；Ctrl/⌘+滚轮（触控板捏合）缩放
    - 整页模式未放大时，滚动即翻页（带节流，避免一下翻好几页） */
 let wheelPageCooldown = 0;
+let toolbarIdleTimer = 0;
+
+/* 工具条浮在画面上、不占高度：闲置一会儿自动收起，鼠标/手指一动就回来 */
+function showViewerToolbar() {
+  if (!state.viewerOpen) return;
+  DOM.viewerToolbar.classList.remove("idle");
+  window.clearTimeout(toolbarIdleTimer);
+  toolbarIdleTimer = window.setTimeout(function() {
+    if (state.viewerOpen) DOM.viewerToolbar.classList.add("idle");
+  }, 2800);
+}
+
+function hideViewerToolbar() {
+  window.clearTimeout(toolbarIdleTimer);
+  DOM.viewerToolbar.classList.add("idle");
+}
 
 function handleViewerWheel(event) {
   if (!state.viewerOpen) return;
+
+  /* 触控板双指捏合在浏览器里就是 ctrl+wheel：四种排布都拿它当缩放 */
+  if (event.ctrlKey || event.metaKey) {
+    event.preventDefault();
+    setZoom(zoom.scale * (event.deltaY < 0 ? 1.12 : 0.89));
+    return;
+  }
 
   const stage = DOM.viewerStage;
   const shiftAsHorizontal = event.shiftKey && !event.deltaX;
@@ -745,11 +763,6 @@ function handleViewerWheel(event) {
   const verticalDelta = shiftAsHorizontal ? 0 : event.deltaY;
 
   if (state.fitMode === "page") {
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      setZoom(zoom.scale * (event.deltaY < 0 ? 1.12 : 0.89));
-      return;
-    }
     if (zoom.scale > 1) {
       event.preventDefault();
       zoom.x -= horizontalDelta;
@@ -776,6 +789,41 @@ function handleViewerWheel(event) {
   if (!handled && canScrollX && Math.abs(verticalDelta) > 0.5) { stage.scrollLeft += verticalDelta; handled = true; }
 
   if (handled) event.preventDefault();
+}
+
+/* 缩放：四种排布都要能放大缩小，默认 100%（zoom.scale = 1）
+   - 整页：transform 缩放 + 滚轮平移（applyPageZoom 管）
+   - 宽度：图片按百分比加宽，放大后靠横向滚动看
+   - 横排：按舞台高度放大整排页面（页宽按比例跟着长），放大后允许纵向滚动
+   - 纵滚：按舞台宽度放大页面宽度（沿用原实现） */
+function applyZoom(previousScale) {
+  const stage = DOM.viewerStage;
+
+  if (state.fitMode === "width") {
+    DOM.viewerImg.style.width = zoom.scale === 1 ? "" : (zoom.scale * 100) + "%";
+    return;
+  }
+
+  const scrollRatio = zoom.scale / (previousScale || 1);
+
+  if (state.fitMode === "horizontal") {
+    if (zoom.scale === 1) {
+      DOM.viewerPages.style.height = "";
+      stage.style.overflowY = "";
+    } else {
+      DOM.viewerPages.style.height = Math.round(stage.clientHeight * zoom.scale) + "px";
+      stage.style.overflowY = "auto";
+    }
+    stage.scrollLeft *= scrollRatio;
+    return;
+  }
+
+  const stageStyle = getComputedStyle(stage);
+  const horizontalPadding = parseFloat(stageStyle.paddingLeft) + parseFloat(stageStyle.paddingRight);
+  const baseWidth = Math.min(stage.clientWidth - horizontalPadding, 1040);
+  DOM.viewerPages.style.width = Math.round(baseWidth * zoom.scale) + "px";
+  stage.scrollTop *= scrollRatio;
+  stage.scrollLeft = Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2);
 }
 
 /* 全屏：只把阅读器元素放全屏（不动整页），退出时同步按钮状态 */
@@ -819,8 +867,9 @@ function bindViewerGestures() {
   }
 
   DOM.viewerStage.addEventListener("touchstart", function(event) {
-    if (!state.viewerOpen || state.fitMode !== "page") return;
+    if (!state.viewerOpen) return;
 
+    /* 双指捏合：四种排布都能缩放 */
     if (event.touches.length === 2) {
       event.preventDefault();
       touch.pinching = true;
@@ -829,7 +878,8 @@ function bindViewerGestures() {
       return;
     }
 
-    if (event.touches.length === 1) {
+    /* 单指拖动只在整页模式用来平移放大后的画面，其他排布交给原生滚动 */
+    if (event.touches.length === 1 && state.fitMode === "page") {
       touch.startX = event.touches[0].clientX;
       touch.startY = event.touches[0].clientY;
       touch.originX = zoom.x;
@@ -840,7 +890,7 @@ function bindViewerGestures() {
   }, { passive: false });
 
   DOM.viewerStage.addEventListener("touchmove", function(event) {
-    if (!state.viewerOpen || state.fitMode !== "page") return;
+    if (!state.viewerOpen) return;
 
     if (event.touches.length === 2 && touch.pinching) {
       event.preventDefault();
@@ -850,7 +900,7 @@ function bindViewerGestures() {
       return;
     }
 
-    if (event.touches.length === 1 && touch.panning) {
+    if (event.touches.length === 1 && touch.panning && state.fitMode === "page") {
       event.preventDefault();
       zoom.x = touch.originX + event.touches[0].clientX - touch.startX;
       zoom.y = touch.originY + event.touches[0].clientY - touch.startY;
@@ -859,7 +909,7 @@ function bindViewerGestures() {
   }, { passive: false });
 
   DOM.viewerStage.addEventListener("touchend", function(event) {
-    if (state.fitMode !== "page" || event.touches.length) return;
+    if (event.touches.length) return;
 
     const wasGesture = touch.panning || touch.pinching;
     const endTouch = event.changedTouches[0];
@@ -872,7 +922,8 @@ function bindViewerGestures() {
     touch.panning = false;
     touch.pinching = false;
 
-    if (!wasGesture && zoom.scale === 1 && Math.abs(deltaX) > 64 && Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (!wasGesture && state.fitMode === "page" && zoom.scale === 1
+      && Math.abs(deltaX) > 64 && Math.abs(deltaX) > Math.abs(deltaY)) {
       changePage(deltaX > 0 ? -1 : 1);
     }
   }, { passive: false });
@@ -929,6 +980,11 @@ function bindEvents() {
   DOM.fitPageBtn.addEventListener("click", function() { setFitMode("page"); });
   DOM.fullscreenBtn.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", syncFullscreenButton);
+  DOM.viewer.addEventListener("pointermove", showViewerToolbar);
+  DOM.viewer.addEventListener("pointerdown", showViewerToolbar);
+  DOM.viewer.addEventListener("wheel", showViewerToolbar, { passive: true });
+  DOM.viewer.addEventListener("touchstart", showViewerToolbar, { passive: true });
+  document.addEventListener("keydown", showViewerToolbar);
   DOM.zoomSlider.addEventListener("input", function(event) {
     setZoom(Number(event.target.value) / 100);
   });

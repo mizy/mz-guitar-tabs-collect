@@ -6,7 +6,7 @@
  *   catalog.json  stale-while-revalidate（先给缓存，后台拉新的，下次打开生效）
  *   其他外壳文件  cache-first
  */
-const CACHE_VERSION = "a8d0cf8a";
+const CACHE_VERSION = "50719538";
 const SHELL_CACHE = "guitar-shell-" + CACHE_VERSION;
 const DATA_CACHE = "guitar-data-" + CACHE_VERSION;
 const IMAGE_CACHE = "guitar-image-" + CACHE_VERSION;

@@ -658,21 +658,34 @@ button:focus-visible, input:focus-visible {
 .sidebar-overlay { background: rgba(0, 0, 0, 0.55); }
 button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85, 0.55); }
 
-/* ---- 阅读器：所有操作按钮收进顶部一整条，退出按钮不再压在谱面上 ---- */
+/* ---- 阅读器：操作条浮在画面上、不占高度；闲置自动隐藏 ---- */
 
-.viewer { display: flex; flex-direction: column; background: #0b0d10; }
+/* 不再用 flex 列布局：工具条改成浮层（absolute），舞台独占整个视口高度，
+   笔记本屏幕矮的时候不再被工具条吃掉一行。工具条闲置 2.8s 自动上移隐藏，
+   一动鼠标/一碰屏幕就回来（JS 加 .idle）。 */
+.viewer { display: block; background: #0b0d10; }
 
 .viewer-toolbar {
-  position: static;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 4;
   display: flex;
-  flex: 0 0 auto;
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   padding: max(8px, env(safe-area-inset-top)) 12px 8px;
-  background: rgba(16, 18, 22, 0.97);
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(to bottom, rgba(11, 13, 16, 0.97), rgba(11, 13, 16, 0.82));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(10px);
+  transition: opacity 180ms ease, transform 180ms ease;
   pointer-events: auto;
+}
+.viewer-toolbar.idle {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
 }
 
 .viewer-close {
@@ -729,11 +742,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   font-size: 12px;
 }
 
+/* 舞台独占视口；工具条浮在上面，所以这里不再为它留高度 */
 .viewer-stage {
-  position: relative;
-  inset: auto;
-  flex: 1 1 auto;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   padding: 0 clamp(10px, 3vw, 44px);
 }
 .viewer-stage[data-fit="width"],
@@ -741,10 +753,23 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
 .viewer-stage[data-fit="horizontal"] {
   padding: 0 clamp(10px, 3vw, 44px);
   scroll-padding-inline: clamp(10px, 3vw, 44px);
+  /* 源样式开了 x 轴 scroll-snap，会和「滚轮/触控板连续滚动」打架：
+     每滚一点点就被吸附回原位，表现为横排完全滚不动。这里关掉，翻页对齐由 JS 负责。 */
+  scroll-snap-type: none;
 }
 .viewer-stage[data-fit="width"],
 .viewer-stage[data-fit="horizontal"],
 .viewer-stage[data-fit="vertical"] { overscroll-behavior: contain; }
+
+/* 宽度模式放大后要能横向滚动。
+   坑一：源样式限了 max-width: 100%，放大不生效；坑二：舞台是 flex 容器，
+   图片默认会被 flex-shrink 压回容器宽度，所以必须 flex: 0 0 auto；
+   坑三：flex 居中对齐时超出部分向左溢出会滚不到，改成左对齐。 */
+.viewer-stage[data-fit="width"] { justify-content: flex-start; }
+.viewer-stage[data-fit="width"] > img {
+  max-width: none;
+  flex: 0 0 auto;
+}
 
 .viewer:fullscreen { background: #0b0d10; }
 </style>
@@ -794,7 +819,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
 </div>
 
 <div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="吉他谱阅读器" hidden>
-  <div class="viewer-toolbar">
+  <div class="viewer-toolbar" id="viewerToolbar">
     <button class="viewer-control viewer-close" id="viewerClose" type="button" aria-label="关闭阅读器">×</button>
     <div class="viewer-heading">
       <span class="viewer-title" id="viewerTitle"></span>
