@@ -348,6 +348,10 @@ function showView(viewName, preserveScroll) {
 function setActiveView(viewId) {
   if (!VIEWS_BY_ID.has(viewId)) return;
   state.viewId = viewId;
+  /* 点分类＝换一个浏览范围：清掉搜索框里的残留关键词，
+     否则会出现「点了弹唱却只剩几首」这种看起来像分类坏了的错觉 */
+  state.query = "";
+  DOM.searchInput.value = "";
   renderSidebar();
   renderHome();
   setSidebarOpen(false);
@@ -408,7 +412,7 @@ function openViewer(pageIndex, options) {
   DOM.viewer.hidden = false;
   document.body.classList.add("viewer-open");
   updateViewer();
-  showViewerToolbar();
+  showViewerBarsTemporarily();
 
   if (settings.focus !== false) {
     window.requestAnimationFrame(function() { DOM.viewerClose.focus(); });
@@ -737,48 +741,117 @@ const MAX_ZOOM = 1.5;
    - 整页模式放大后按滚动方向平移画面；Ctrl/⌘+滚轮（触控板捏合）缩放
    - 整页模式未放大时，滚动即翻页（带节流，避免一下翻好几页） */
 let wheelPageCooldown = 0;
-let toolbarIdleTimer = 0;
-let toolbarHiddenAt = 0;
-let lastPointerX = null;
+let barsHideTimer = 0;
+let barsHintTimer = 0;
 let lastPointerY = null;
-const TOOLBAR_IDLE_MS = 2800;
-/* 浏览器在样式/布局变化后会补发 pointermove（坐标不变），触控板也会飘；
-   所以只有指针真的移动超过这个距离才算「人在操作」，否则一隐藏就被唤醒。 */
-const TOOLBAR_MIN_POINTER_MOVE = 8;
+/* 阅读器两条浮层：工具条贴顶、页码条贴底。都只在「指针进入对应边缘区域」时出现，
+   指针回到中间就收起 —— 谱面区域平时保持干净（用户要求：不要自动隐藏那种冒出来又缩回去的行为）。 */
+const EDGE_ZONE_PX = 96;
+const EDGE_HIDE_DELAY_MS = 450;   // 从边缘划走时留一点缓冲，避免闪一下
+const BARS_HINT_MS = 1800;        // 打开阅读器时先亮一下两条浮层，让人知道东西在哪
 
-/* 工具条浮在画面上、不占高度：闲置一会儿自动收起，指针真的动了就回来 */
+function pointerInEdgeZone() {
+  if (lastPointerY === null) return false;
+  return lastPointerY <= EDGE_ZONE_PX || lastPointerY >= window.innerHeight - EDGE_ZONE_PX;
+}
+
 function showViewerToolbar() {
   if (!state.viewerOpen) return;
   DOM.viewerToolbar.classList.remove("idle");
-  window.clearTimeout(toolbarIdleTimer);
-  toolbarIdleTimer = window.setTimeout(function() {
-    if (state.viewerOpen) hideViewerToolbar();
-  }, TOOLBAR_IDLE_MS);
 }
 
 function hideViewerToolbar() {
-  window.clearTimeout(toolbarIdleTimer);
-  toolbarHiddenAt = Date.now();
   DOM.viewerToolbar.classList.add("idle");
 }
 
-/* 手动兜底：按 T 直接收起/唤出工具条（自动隐藏万一不合口味就用这个） */
-function toggleViewerToolbar() {
-  if (DOM.viewerToolbar.classList.contains("idle")) showViewerToolbar();
-  else hideViewerToolbar();
+function showViewerFooter() {
+  if (!state.viewerOpen) return;
+  DOM.viewerFooter.classList.remove("idle");
 }
 
-function handleViewerPointerMove(event) {
-  if (typeof event.clientX !== "number") return;
-  const previousX = lastPointerX;
-  const previousY = lastPointerY;
-  lastPointerX = event.clientX;
-  lastPointerY = event.clientY;
-  if (previousX === null) return;
-  if (Math.hypot(event.clientX - previousX, event.clientY - previousY) < TOOLBAR_MIN_POINTER_MOVE) return;
-  /* 刚隐藏完的一瞬间不复活，避免「隐藏→补发事件→又出现」的抖动 */
-  if (Date.now() - toolbarHiddenAt < 400) return;
+function hideViewerFooter() {
+  DOM.viewerFooter.classList.add("idle");
+}
+
+function hideViewerBars() {
+  window.clearTimeout(barsHideTimer);
+  window.clearTimeout(barsHintTimer);
+  hideViewerToolbar();
+  hideViewerFooter();
+}
+
+/* 打开阅读器时让两条浮层亮一小会儿，指到边缘就直接出现（T 键可随时手动切换） */
+function showViewerBarsTemporarily() {
+  if (!state.viewerOpen) return;
   showViewerToolbar();
+  showViewerFooter();
+  window.clearTimeout(barsHintTimer);
+  barsHintTimer = window.setTimeout(function() {
+    if (!pointerInEdgeZone()) hideViewerBars();
+  }, BARS_HINT_MS);
+}
+
+function toggleViewerToolbar() {
+  const hidden = DOM.viewerToolbar.classList.contains("idle");
+  if (hidden) { showViewerToolbar(); showViewerFooter(); }
+  else { hideViewerBars(); }
+}
+
+/* 指针位置决定哪条浮层出现：贴顶出工具条、贴底出页码条、在中间两条都收 */
+function handleViewerEdgeMove(event) {
+  if (!state.viewerOpen || typeof event.clientY !== "number") return;
+  lastPointerY = event.clientY;
+  const height = window.innerHeight;
+  const nearTop = event.clientY <= EDGE_ZONE_PX;
+  const nearBottom = event.clientY >= height - EDGE_ZONE_PX;
+  window.clearTimeout(barsHideTimer);
+  window.clearTimeout(barsHintTimer);
+  if (nearTop) { showViewerToolbar(); hideViewerFooter(); return; }
+  if (nearBottom) { showViewerFooter(); hideViewerToolbar(); return; }
+  barsHideTimer = window.setTimeout(hideViewerBars, EDGE_HIDE_DELAY_MS);
+}
+
+/* ---- 首页侧边栏：桌面端可收缩（收起来后谱面区更宽），状态记在本地 ---- */
+
+const SIDEBAR_COLLAPSED_KEY = "personal-guitar-library.sidebar-collapsed.v1";
+
+function appLayoutElement() {
+  return document.querySelector(".app-layout");
+}
+
+function isDesktopLayout() {
+  return window.matchMedia("(min-width: 769px)").matches;
+}
+
+function readSidebarCollapsed() {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function setSidebarCollapsed(collapsed) {
+  const layout = appLayoutElement();
+  if (!layout) return;
+  layout.classList.toggle("sidebar-collapsed", collapsed);
+  DOM.menuBtn.setAttribute("aria-expanded", String(!collapsed));
+  DOM.menuBtn.setAttribute("aria-label", collapsed ? "展开谱库筛选" : "收起谱库筛选");
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+  } catch (error) {
+    // 无痕模式等场景写不了存储，收放本身照常可用
+  }
+}
+
+/* 同一个按钮两种语义：桌面端收放侧边栏，窄屏开关抽屉 */
+function toggleSidebar() {
+  if (!isDesktopLayout()) {
+    setSidebarOpen(!DOM.sidebar.classList.contains("open"));
+    return;
+  }
+  const layout = appLayoutElement();
+  setSidebarCollapsed(!(layout && layout.classList.contains("sidebar-collapsed")));
 }
 
 function handleViewerWheel(event) {
@@ -997,9 +1070,7 @@ function bindViewerGestures() {
 }
 
 function bindEvents() {
-  DOM.menuBtn.addEventListener("click", function() {
-    setSidebarOpen(!DOM.sidebar.classList.contains("open"));
-  });
+  DOM.menuBtn.addEventListener("click", toggleSidebar);
   DOM.sidebarOverlay.addEventListener("click", function() { setSidebarOpen(false); });
   DOM.searchInput.addEventListener("input", function(event) {
     state.query = event.target.value;
@@ -1016,10 +1087,17 @@ function bindEvents() {
   DOM.fitPageBtn.addEventListener("click", function() { setFitMode("page"); });
   DOM.fullscreenBtn.addEventListener("click", toggleFullscreen);
   document.addEventListener("fullscreenchange", syncFullscreenButton);
-  DOM.viewer.addEventListener("pointermove", handleViewerPointerMove);
-  DOM.viewer.addEventListener("pointerdown", showViewerToolbar);
-  DOM.viewer.addEventListener("wheel", showViewerToolbar, { passive: true });
-  DOM.viewer.addEventListener("touchstart", showViewerToolbar, { passive: true });
+  /* 浮层显隐改由「指针是否贴在上下边缘」决定：贴顶出工具条、贴底出页码条，中间两条都收 */
+  DOM.viewer.addEventListener("pointermove", handleViewerEdgeMove);
+  DOM.viewer.addEventListener("pointerdown", handleViewerEdgeMove);
+  DOM.viewer.addEventListener("pointerleave", hideViewerBars);
+  DOM.viewer.addEventListener("touchstart", function(event) {
+    const touch = event.touches && event.touches[0];
+    if (touch) handleViewerEdgeMove({ clientY: touch.clientY });
+  }, { passive: true });
+  /* Tab 走进浮层时也要亮出来，否则焦点会落在看不见的按钮上 */
+  DOM.viewerToolbar.addEventListener("focusin", showViewerToolbar);
+  DOM.viewerFooter.addEventListener("focusin", showViewerFooter);
   /* 注意：T 是手动切换键，Esc 要留给「退全屏/关阅读器」，这两个键不能算「活动」，
      否则按 T 时先被活跃监听唤出、再被切换逻辑收起，表现为怎么按都是隐藏 */
   document.addEventListener("keydown", function(event) {
@@ -1028,7 +1106,7 @@ function bindEvents() {
     showViewerToolbar();
   });
   document.addEventListener("visibilitychange", function() {
-    if (document.hidden) hideViewerToolbar();
+    if (document.hidden) hideViewerBars();
   });
   DOM.zoomSlider.addEventListener("input", function(event) {
     setZoom(Number(event.target.value) / 100);
@@ -1079,6 +1157,12 @@ function bindEvents() {
   window.addEventListener("popstate", restoreLocation);
   window.addEventListener("hashchange", restoreLocation);
   window.addEventListener("resize", function() {
+    /* 跨断点时两种侧边栏状态不能串味 */
+    if (!isDesktopLayout()) {
+      const layout = appLayoutElement();
+      if (layout) layout.classList.remove("sidebar-collapsed");
+      setSidebarOpen(false);
+    }
     if (!state.viewerOpen) return;
     resetZoom();
     if (state.fitMode === "horizontal" || state.fitMode === "vertical") {
@@ -1105,6 +1189,7 @@ async function boot() {
   renderSidebar();
   renderHome();
   setFitMode(state.fitMode);
+  setSidebarCollapsed(readSidebarCollapsed());
   bindEvents();
   restoreLocation();
   DOM.loading.hidden = true;

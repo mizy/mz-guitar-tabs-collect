@@ -626,7 +626,7 @@ button:focus-visible, input:focus-visible {
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="我的吉他谱库">
-<meta name="x-build" content="3d4a64d6">
+<meta name="x-build" content="71ea26c3">
 <style id="viewer-overrides">
 /* ==========================================================================
    暗色主题 + 阅读器工具栏重构（由 build-guitar-tabs-site.mjs 注入到 </head> 前）
@@ -782,6 +782,25 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   min-height: 0;
 }
 
+/* 页码条也改成「贴到底部边缘才出现」：加 .idle 时下滑淡出（保留水平居中位移） */
+.viewer-footer {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.viewer-footer.idle {
+  opacity: 0;
+  transform: translate(-50%, 100%);
+  pointer-events: none;
+}
+
+/* ---- 首页侧边栏：桌面端可收缩 ---- */
+@media (min-width: 769px) {
+  .menu-btn { display: inline-grid; }                       /* 桌面端也给出收放按钮 */
+  .sidebar { transition: margin-left 180ms ease; }
+  .app-layout.sidebar-collapsed .sidebar {
+    margin-left: calc(var(--sidebar-w) * -1);               /* 负外边距收掉占位，正文自动补满 */
+  }
+}
+
 .viewer:fullscreen { background: #0b0d10; }
 
 /* 侧边栏底部的版本号：确认客户端跑的是哪一版（与构建哈希一致） */
@@ -804,7 +823,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
     <div class="sidebar-header">
       <span class="library-name">🎸 <span id="libraryName">我的吉他谱库</span></span>
       <span class="library-stats" id="libraryStats"></span>
-      <span class="build-stamp" id="buildStamp">build 3d4a64d6</span>
+      <span class="build-stamp" id="buildStamp">build 71ea26c3</span>
     </div>
     <div class="sidebar-nav" id="sidebarNav"></div>
   </nav>
@@ -875,8 +894,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   <nav class="viewer-footer" id="viewerFooter" aria-label="页码导航"></nav>
 </div>
 
-<script src="prelude.3d4a64d6.js" defer></script>
-<script src="app.3d4a64d6.js" defer></script>
+<script src="prelude.71ea26c3.js" defer></script>
+<script src="app.71ea26c3.js" defer></script>
 
 </body>
 </html><!-- compact build complete -->
