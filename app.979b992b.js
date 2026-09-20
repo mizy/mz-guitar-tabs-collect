@@ -687,14 +687,16 @@ function resetZoom() {
   DOM.viewerPages.style.width = "";
   DOM.viewerPages.style.height = "";
   DOM.viewerStage.style.overflowY = "";
+  DOM.viewerStage.classList.remove("zoomed-out");
   DOM.zoomSlider.value = "100";
   DOM.zoomValue.value = "100%";
 }
 
 function setZoom(nextScale) {
   const previousScale = zoom.scale;
-  zoom.scale = Math.min(Math.max(nextScale, 1), 5);
-  if (zoom.scale === 1) {
+  zoom.scale = Math.min(Math.max(nextScale, MIN_ZOOM), MAX_ZOOM);
+  if (zoom.scale <= 1) {
+    /* 1 倍及以下不需要平移偏移：缩小后整页本来就看得全 */
     zoom.x = 0;
     zoom.y = 0;
   }
@@ -724,6 +726,11 @@ function applyPageZoom() {
     DOM.viewerImg.style.transform = "translate(" + zoom.x + "px, " + zoom.y + "px) scale(" + zoom.scale + ")";
   }
 }
+
+/* 缩放范围：50% ~ 150%，默认 100%（用户要求：既要能放大，也要能缩小）。
+   这里的上下限必须与滑块 min/max 一致（滑块在 VIEWER_MARKUP 里），改一处要改另一处。 */
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 1.5;
 
 /* 滚轮 / 触控板：任何排布下都要能顺畅滚动或平移。
    - 有可滚动空间就滚那条轴（横排滚横向、纵滚两轴都行、宽度只滚竖向）
@@ -825,6 +832,8 @@ function handleViewerWheel(event) {
    - 纵滚：按舞台宽度放大页面宽度（沿用原实现） */
 function applyZoom(previousScale) {
   const stage = DOM.viewerStage;
+  /* 缩到 100% 以下时，宽度/横排模式的内容会窄于舞台，加类让样式把它居中（见 viewer-overrides.css） */
+  stage.classList.toggle("zoomed-out", zoom.scale < 1);
 
   if (state.fitMode === "width") {
     DOM.viewerImg.style.width = zoom.scale === 1 ? "" : (zoom.scale * 100) + "%";
@@ -949,7 +958,7 @@ function bindViewerGestures() {
     touch.panning = false;
     touch.pinching = false;
 
-    if (!wasGesture && state.fitMode === "page" && zoom.scale === 1
+    if (!wasGesture && state.fitMode === "page" && zoom.scale <= 1
       && Math.abs(deltaX) > 64 && Math.abs(deltaX) > Math.abs(deltaY)) {
       changePage(deltaX > 0 ? -1 : 1);
     }

@@ -626,7 +626,7 @@ button:focus-visible, input:focus-visible {
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="我的吉他谱库">
-<meta name="x-build" content="317af66b">
+<meta name="x-build" content="979b992b">
 <style id="viewer-overrides">
 /* ==========================================================================
    暗色主题 + 阅读器工具栏重构（由 build-guitar-tabs-site.mjs 注入到 </head> 前）
@@ -772,6 +772,16 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   flex: 0 0 auto;
 }
 
+/* 缩到 100% 以下：内容窄于舞台时要居中，否则会贴着左边（缩放范围 50%~150%） */
+.viewer-stage[data-fit="width"].zoomed-out { justify-content: center; }
+.viewer-stage[data-fit="horizontal"].zoomed-out { display: flex; align-items: center; }
+.viewer-stage[data-fit="horizontal"].zoomed-out .viewer-pages {
+  margin-inline: auto;
+  /* 源样式给了 .viewer-pages { min-height: 100% }，会压住缩小后的内联高度，
+     导致横排缩小时页面高度纹丝不动（实测 50% 时 sheet 仍是满高），所以缩小时要显式放开 */
+  min-height: 0;
+}
+
 .viewer:fullscreen { background: #0b0d10; }
 
 /* 侧边栏底部的版本号：确认客户端跑的是哪一版（与构建哈希一致） */
@@ -794,7 +804,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
     <div class="sidebar-header">
       <span class="library-name">🎸 <span id="libraryName">我的吉他谱库</span></span>
       <span class="library-stats" id="libraryStats"></span>
-      <span class="build-stamp" id="buildStamp">build 317af66b</span>
+      <span class="build-stamp" id="buildStamp">build 979b992b</span>
     </div>
     <div class="sidebar-nav" id="sidebarNav"></div>
   </nav>
@@ -851,7 +861,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
       </div>
       <label class="zoom-control" id="zoomControl" for="zoomSlider">
         <span>缩放</span>
-        <input id="zoomSlider" type="range" min="100" max="500" step="10" value="100" aria-label="谱面缩放比例">
+        <input id="zoomSlider" type="range" min="50" max="150" step="5" value="100" aria-label="谱面缩放比例（50%–150%）">
         <output class="zoom-value" id="zoomValue" for="zoomSlider">100%</output>
       </label>
       <button class="viewer-control" id="fullscreenBtn" type="button" aria-pressed="false" aria-label="全屏阅读">全屏</button>
@@ -865,8 +875,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(217, 138, 85
   <nav class="viewer-footer" id="viewerFooter" aria-label="页码导航"></nav>
 </div>
 
-<script src="prelude.317af66b.js" defer></script>
-<script src="app.317af66b.js" defer></script>
+<script src="prelude.979b992b.js" defer></script>
+<script src="app.979b992b.js" defer></script>
 
 </body>
 </html><!-- compact build complete -->
