@@ -427,6 +427,13 @@ function closeViewer(options) {
 
   if (!state.viewerOpen) return;
 
+  /* 顺序不能反：阅读器就是当前全屏元素时，先 hidden 会让浏览器停在
+     「全屏元素已 display:none」的僵死状态，页面此后点哪都没反应（用户实测踩到）。
+     必须先退全屏，再隐藏阅读器。 */
+  if (document.fullscreenElement === DOM.viewer) {
+    Promise.resolve(document.exitFullscreen()).catch(function() {});
+  }
+
   state.viewerOpen = false;
   DOM.viewer.hidden = true;
   document.body.classList.remove("viewer-open");
